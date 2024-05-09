@@ -3,6 +3,7 @@ import requests
 import pandas as pd
 from twitchdata import TwitchData
 from bs4 import BeautifulSoup 
+from functools import reduce
 
 # Game data class to store extract and merge functions 
 class GameData:
@@ -39,11 +40,11 @@ class GameData:
             'https://www.metacritic.com/game/grand-theft-auto-v/',
             'https://www.metacritic.com/game/call-of-duty-black-ops/'
         ]
-        
+        # Headers
         self.__headers = {'User-Agent': "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/42.0.2311.135 Safari/537.36 Edge/12.246"} 
-        
+        # games list
         self.__sales_game_list = list(self.__game_prices_dict.keys())
-        
+        # Dataframes
         self.__sales_df = pd.DataFrame()
         self.__ign_df = pd.DataFrame()
         self.__metacritic_df = pd.DataFrame()
@@ -51,7 +52,7 @@ class GameData:
         self.__main_df = pd.DataFrame()
         
         self.__void = 0
-        
+    # Get and set functions for the private  dataframe variables
     def set_sales_df(self, df):
         self.__sales_df = df
     def get_sales_df(self):
@@ -72,7 +73,12 @@ class GameData:
     def get_igdb_df(self):
         return self.__igdb_df
     
+    def set_main_df(self, df):
+        self.__main_df = df
+    def get_main_df(self):
+        return self.__main_df
     
+    # IGDB Twitch auth function
     def igdb_authenticate(self, twitch_data):
         """
         Authenticate IGDB API request.
@@ -98,6 +104,7 @@ class GameData:
             error_msg = f'Failed to obtain access token. Status code: {response.status_code}'
             raise ValueError(error_msg)
     
+    # Get the games data
     def fetch_game_data(self, access_token_param, user_game_param, twitch_data_param):
         """
         Return the data for the requested game.
@@ -156,8 +163,8 @@ class GameData:
 
         # Group by game name and sum up the global sales, using an alias for the aggregated column
         total_sales = filtered_df.groupby(['Name','Genre']).agg(
-            sum_global_sales=('Global_Sales', lambda x: round(x.sum(), 2)),
-            sum_NA_sales=('NA_Sales', lambda x: round(x.sum(), 2))
+            Global_Sales=('Global_Sales', lambda x: round(x.sum(), 2)),
+            NA_Sales=('NA_Sales', lambda x: round(x.sum(), 2))
             ).reset_index()
         
         # Create dataframe from class attribute prices dictionary
@@ -243,25 +250,40 @@ class GameData:
         igdb_df_transformed= igdb_df.drop(columns=['id'])
         
         # Rename columns
-        igdb_df_transformed.rename(columns={'name': 'Name', 'total_rating': 'Total_Rating', 'first_release_date': 'First_Release_Date'}, inplace=True)
+        igdb_df_transformed.rename(columns={'name': 'Name', 'total_rating': 'IGDB_Rating', 'first_release_date': 'First_Release_Date'}, inplace=True)
         self.set_igdb_df(igdb_df_transformed)
         return self.__void
     
     def merge_data(self):
+        df_list = [
+            self.__sales_df,
+            self.__ign_df,
+            self.__metacritic_df, 
+            self.__igdb_df 
+            ]
+        # Combine the dataframes into one
+        merged_df = reduce(lambda left, right: pd.merge(left, right, on = 'Name', how = 'left'), df_list)
+        
+        # Convert ratings to numeric
+        merged_df['IGN_Rating'] = pd.to_numeric(merged_df['IGN_Rating'], errors='coerce')
+        merged_df['Metacritic_Rating'] = pd.to_numeric(merged_df['Metacritic_Rating'], errors='coerce')
+        merged_df['IGDB_Rating'] = pd.to_numeric(merged_df['IGDB_Rating'], errors='coerce')
+        
+        # Transform ign rating * 10 to match others numerically out of 100 rather tthan out of 10
+        merged_df['IGN_Rating'] *= 10
+        
+        # Create new column Average_Rating
+        merged_df['Average_Rating'] = merged_df[['IGN_Rating', 'Metacritic_Rating', 'IGDB_Rating']].mean(axis=1)
+        
+        # Round all ratings to nearest whole number
+        merged_df['IGN_Rating'] = merged_df['IGN_Rating'].round().astype(int)
+        merged_df['IGDB_Rating'] = merged_df['IGDB_Rating'].round().astype(int)
+        merged_df['Metacritic_Rating'] = merged_df['Metacritic_Rating'].round().astype(int)
+        merged_df['Average_Rating'] = merged_df['Average_Rating'].round().astype(int)
+        
+        main_df = merged_df[['Name', 'Genre', 'Global_Sales', 'NA_Sales', 'Price', 'IGN_Rating', 'Metacritic_Rating', 'IGDB_Rating', 'Average_Rating', 'First_Release_Date']]
+        # Set main dv attribute
+        self.set_main_df(main_df)
+        
         return self.__void
-    
-
-gd = GameData()
-
-gd.get_sales_data()
-print(gd.get_sales_df())
-
-gd.get_ign_data()
-print(gd.get_ign_df())
-
-gd.get_metacritic_data()
-print(gd.get_metacritic_df())
-
-gd.get_igdb_data()
-print(gd.get_igdb_df())
 
