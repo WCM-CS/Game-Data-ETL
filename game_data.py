@@ -153,7 +153,7 @@ class GameData:
     # Returns the game sales data (merges prices dict into ouput)
     def get_sales_data(self):
         #Create datframe from csv file
-        df = pd.read_csv('Sales_data/vgsales.csv')
+        df = pd.read_csv('vgsales.csv')
 
         #filter dataframe based on the game_list
         filtered_df = df[df['Name'].str.lower().isin(x.lower() for x in self.__sales_game_list)]
@@ -254,13 +254,17 @@ class GameData:
         self.set_igdb_df(igdb_df_transformed)
         return self.__void
     
-    def merge_data(self):
-        df_list = [
-            self.__sales_df,
-            self.__ign_df,
-            self.__metacritic_df, 
-            self.__igdb_df 
-            ]
+    def extract(self):
+        # Gather the data
+        self.get_sales_data()
+        self.get_igdb_data()
+        self.get_ign_data()
+        self.get_metacritic_data()
+        # get df list
+        df_list = [self.get_sales_df(), self.get_igdb_df(), self.get_ign_df(), self.get_metacritic_df()]
+        return df_list
+        
+    def merge_data(self, df_list):
         # Combine the dataframes into one
         merged_df = reduce(lambda left, right: pd.merge(left, right, on = 'Name', how = 'left'), df_list)
         
@@ -286,4 +290,3 @@ class GameData:
         self.set_main_df(main_df)
         
         return self.__void
-
